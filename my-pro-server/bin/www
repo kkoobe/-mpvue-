@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('my-pro-server:server');
+var http = require('http');
+var router =require('../routes/index')
+let type=5;
+const {
+  shopUserCollection,
+  userCollection,
+  foodsCollection,
+  orderCollection,
+  couponCollection,
+  restaurantCollection,
+  ratingCollection,
+} =require('../db')
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+var io = require('socket.io')(server)
+io.sockets.on('connection', function (socket) {
+  console.log(1111)
+  // 用户发出的信息
+  // "orderStatus":Boolean,
+  // "tableId":Number,
+  // "foodsName":Array,
+  // "foodsCount":Array,
+  // "sumPrice":String,
+  // "remarkInfo":String,
+  // "orderId":String,
+  // "orderTime":Date
+
+  router.post('/setMsg',function(req,res,next){
+    type=req.body.type
+    let orderId
+    orderCollection.find(function(err,orderList){
+      let max=Number(orderList[0].orderId)
+      orderList.forEach((element)=>{
+        if(Number(element.orderId)>max){
+          max=element.orderId
+        }
+      })
+      orderId=(Number(max)+1).toString()
+    })
+    let tableId=Math.ceil(Math.random()*10)
+    if(type==0){
+      socket.emit('addOrder');
+      console.log(req.body)
+      type=5
+      console.log(new Date())
+      let {foodsName,foodsCount,sumPrice,remarkInfo}=req.body
+      console.log(foodsName,foodsCount,sumPrice,remarkInfo)
+      setTimeout(() => {
+        let order= new orderCollection({orderStatus:false,tableId,foodsName,foodsCount,sumPrice,remarkInfo,orderId,orderTime:new Date()})
+        userCollection.findOne({openid:req.body.openid},function(err,user){
+          console.log(user)
+          orderList=user.orderId
+          orderList.push(orderId)
+          userCollection.updateOne({openid:req.body.openid},{orderId:orderList},function(err){
+            if(err){
+              console.log('修改失败')
+            }else{
+              // orderId=Number(orderId);
+              // orderId++;
+              // orderId.toString();
+            }
+          })
+        })
+        order.save()
+      }, 500);
+
+    }
+    if(type==1){
+      socket.emit('reminderOrder',tableId);
+      type=5
+    }
+    if(type==2){
+    socket.emit('cancelOrder',tableId);
+    type=5
+    }
+
+    res.send({code:0})
+  })
+
+
+  // if(type==0){
+
+});
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}
